@@ -1,0 +1,56 @@
+services:
+
+  oracle:
+    image: gvenzl/oracle-xe:21-slim
+    container_name: oracle-xe
+    ports:
+      - "1521:1521"
+    environment:
+      ORACLE_PASSWORD: oracle
+      APP_USER: bankuser
+      APP_USER_PASSWORD: bankpass
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+      - ./src/main/resources/db/oracle-init.sql:/container-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  kinetica:
+    # "latest" tag does not exist — use the explicit stable release tag.
+    # Check https://hub.docker.com/r/kinetica/kinetica-intel/tags for newer releases.
+    image: kinetica/kinetica-intel:7.1.9
+    container_name: kinetica
+    ports:
+      - "9191:9191"   # REST API / JDBC driver endpoint
+      - "8080:8080"   # GAdmin web UI (http://localhost:8080)
+    environment:
+      # FULL_START=1 is required — without it the container starts in a
+      # reduced bootstrapping mode and the database process never launches.
+      FULL_START: "1"
+      KINETICA_PASS: kntAUG30
+    volumes:
+      - kinetica-data:/opt/gpudb/persist
+      # kinetica-init.sql is NOT auto-executed — run it manually once the
+      # container is healthy (the file is available inside the container):
+      #
+      #   docker exec kinetica bash -c \
+      #     "gpudb_execute_sql -u admin -p kinetica123 \
+      #      < /opt/gpudb/kinetica-init.sql"
+      #
+      # Or paste the DDL into the GAdmin SQL worksheet at http://localhost:8080
+      - ./src/main/resources/db/kinetica-init.sql:/opt/gpudb/kinetica-init.sql:ro
+    healthcheck:
+      # Kinetica REST API requires POST + Content-Type header; a plain GET returns 400
+      test: ["CMD-SHELL", "curl -sf -X POST http://localhost:9191/show/system/status -H 'Content-Type: application/json' -d '{}' > /dev/null"]
+      interval: 30s
+      timeout: 15s
+      retries: 15
+      start_period: 120s
+
+volumes:
+  oracle-data:
+  kinetica-data:

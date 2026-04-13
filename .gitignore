@@ -1,0 +1,55 @@
+# ── Maven / Java ──────────────────────────────────────────────
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+
+# GraalVM native image artifacts
+*.so
+*.dll
+*.dylib
+
+# ── IDE ───────────────────────────────────────────────────────
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.swp
+*.swo
+.project
+.classpath
+.settings/
+.factorypath
+.springBeans
+
+# ── Spring Boot devtools ──────────────────────────────────────
+spring-devtools.properties
+
+# ── Node / Frontend ──────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.env.local
+frontend/.env.*.local
+
+# ── Claude Code ───────────────────────────────────────────────
+.claude/settings.local.json
+
+# ── OS ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Logs ──────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Local config overrides (keep application.yml, ignore secrets) ──
+application-local.yml
+application-local.properties
+*.env
+.env

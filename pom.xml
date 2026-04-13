@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.3.5</version>
+    <relativePath />
+  </parent>
+
+  <groupId>com.example</groupId>
+  <artifactId>camel-aggregate-demo</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <name>CamelAggregateDemo</name>
+  <description>Banking ETL pipeline: Oracle → Apache Camel → Kinetica</description>
+
+  <properties>
+    <java.version>21</java.version>
+    <camel.version>4.8.2</camel.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.apache.camel.springboot</groupId>
+        <artifactId>camel-spring-boot-bom</artifactId>
+        <version>${camel.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- Spring Boot core -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-jdbc</artifactId>
+    </dependency>
+
+    <!-- Web (Tomcat + MVC) — required for REST / SSE metrics endpoint -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- Actuator — exposes /actuator/health, /actuator/camel, etc. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <!-- Docker Compose integration (starts containers automatically in dev) -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-docker-compose</artifactId>
+      <optional>true</optional>
+    </dependency>
+
+    <!-- Apache Camel Spring Boot -->
+    <dependency>
+      <groupId>org.apache.camel.springboot</groupId>
+      <artifactId>camel-spring-boot-starter</artifactId>
+    </dependency>
+
+    <!-- Spring XML DSL support -->
+    <dependency>
+      <groupId>org.apache.camel.springboot</groupId>
+      <artifactId>camel-spring-boot-xml-starter</artifactId>
+    </dependency>
+
+    <!-- JDBC component -->
+    <dependency>
+      <groupId>org.apache.camel.springboot</groupId>
+      <artifactId>camel-jdbc-starter</artifactId>
+    </dependency>
+
+    <!-- SEDA (Staged Event-Driven Architecture) queues -->
+    <dependency>
+      <groupId>org.apache.camel.springboot</groupId>
+      <artifactId>camel-seda-starter</artifactId>
+    </dependency>
+
+    <!-- Resilience4j circuit breaker -->
+    <dependency>
+      <groupId>org.apache.camel.springboot</groupId>
+      <artifactId>camel-resilience4j-starter</artifactId>
+    </dependency>
+
+    <!-- Java Faker — realistic banking test data generation -->
+    <dependency>
+      <groupId>net.datafaker</groupId>
+      <artifactId>datafaker</artifactId>
+      <version>2.3.1</version>
+    </dependency>
+
+    <!-- Oracle JDBC driver -->
+    <dependency>
+      <groupId>com.oracle.database.jdbc</groupId>
+      <artifactId>ojdbc11</artifactId>
+      <version>23.4.0.24.05</version>
+    </dependency>
+
+    <!-- Oracle UCP (Universal Connection Pool) — optional but recommended for Oracle -->
+    <dependency>
+      <groupId>com.oracle.database.jdbc</groupId>
+      <artifactId>ucp11</artifactId>
+      <version>23.4.0.24.05</version>
+    </dependency>
+
+    <!--
+      Kinetica JDBC driver — version must match the server image (7.1.9).
+      Not on Maven Central. Options:
+        1. Resolve from Kinetica's Nexus repo declared in <repositories> below
+           (requires network access to nexus.kinetica.com).
+        2. Install the fat-jar locally after downloading from
+           https://github.com/kineticadb/kinetica-api-java/releases :
+             mvn install:install-file \
+               -Dfile=kinetica-jdbc-7.1.9.9-jar-with-dependencies.jar \
+               -DgroupId=com.kinetica -DartifactId=kinetica-jdbc \
+               -Dversion=7.1.9.9 -Dpackaging=jar
+    -->
+    <dependency>
+      <groupId>com.kinetica</groupId>
+      <artifactId>kinetica-jdbc</artifactId>
+      <version>7.2.3.16</version>
+    </dependency>
+
+    <!-- Test -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.camel</groupId>
+      <artifactId>camel-test-spring-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <repositories>
+    <!-- Kinetica Maven repository for the JDBC driver -->
+    <repository>
+      <id>kinetica-releases</id>
+      <name>Kinetica Releases</name>
+      <url>https://nexus.kinetica.com/repository/releases/</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </repository>
+  </repositories>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!-- GraalVM native image: mvn -Pnative native:compile -->
+    <profile>
+      <id>native</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.graalvm.buildtools</groupId>
+            <artifactId>native-maven-plugin</artifactId>
+            <configuration>
+              <imageName>${project.artifactId}</imageName>
+              <metadataRepository>
+                <enabled>true</enabled>
+              </metadataRepository>
+              <buildArgs>
+                <buildArg>--initialize-at-build-time=org.slf4j</buildArg>
+                <buildArg>--no-fallback</buildArg>
+              </buildArgs>
+            </configuration>
+            <executions>
+              <execution>
+                <id>build-native</id>
+                <goals>
+                  <goal>compile-no-fork</goal>
+                </goals>
+                <phase>package</phase>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+
+</project>

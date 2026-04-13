@@ -1,0 +1,79 @@
+spring:
+  application:
+    name: camel-aggregate-demo
+
+  # Primary datasource — Oracle (used by camel-jdbc as "oracleDataSource")
+  datasource:
+    oracle:
+      jdbc-url: jdbc:oracle:thin:@localhost:1521/XEPDB1
+      username: bankuser
+      password: bankpass
+      driver-class-name: oracle.jdbc.OracleDriver
+      hikari:
+        pool-name: oracle-pool
+        maximum-pool-size: 10
+        minimum-idle: 2
+        connection-timeout: 30000
+        # Oracle UCP-friendly settings
+        connection-test-query: SELECT 1 FROM DUAL
+
+    kinetica:
+      # Format required by kinetica-jdbc 7.1.x driver
+      # BypassCertCheck suppresses the internal Docker-IP auto-discovery probe
+      jdbc-url: "jdbc:kinetica:URL=http://localhost:9191;Username=admin;Password=kntAUG30;"
+      username: admin
+      password: kntAUG30
+      driver-class-name: com.kinetica.jdbc.Driver
+      hikari:
+        pool-name: kinetica-pool
+        # Keep pool small: each new connection triggers Kinetica's cluster
+        # auto-discovery which times out on the internal Docker IP (172.20.x.x).
+        # 1 idle + small max means the probe fires once at startup, not continuously.
+        maximum-pool-size: 5
+        minimum-idle: 1
+        connection-timeout: 30000
+        # keepalive-time 0 disables HikariCP's periodic connection validation,
+        # which would otherwise trigger the auto-discovery probe every few minutes
+        keepalive-time: 0
+
+  # Docker Compose integration: Spring Boot will start docker-compose.yml automatically
+  docker:
+    compose:
+      enabled: true
+      file: docker-compose.yml
+      lifecycle-management: start-and-stop
+
+# Apache Camel configuration
+camel:
+  springboot:
+    name: BankingETLCamel
+    main-run-controller: true
+
+  # XML DSL route discovery (default pattern, kept explicit for clarity)
+  springxml:
+    routes-include-pattern: classpath:camel/*.xml
+
+  # Application-level pipeline tuning
+  # NOTE: routes.xml now hardcodes concurrency (4/8/6) and aggregate sizes (10000/5000ms)
+  # directly. The properties below are kept as documentation and for RowBatchSplitter.
+  batch-size: 500 # rows per batch — read by RowBatchSplitter via @Value
+
+# Resilience4j circuit breaker — mirrors the resilience4jConfiguration in routes.xml
+# (Camel configures the CB inline; these Spring Boot properties are a fallback reference)
+resilience4j:
+  circuitbreaker:
+    instances:
+      kineticaInsert:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+
+logging:
+  level:
+    org.apache.camel: INFO
+    com.example.cameldemo: DEBUG
+
+server:
+  port: 8081
