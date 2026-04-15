@@ -116,22 +116,20 @@
     </dependency>
 
     <!--
-      Kinetica JDBC driver — version must match the server image (7.1.9).
-      Not on Maven Central. Options:
-        1. Resolve from Kinetica's Nexus repo declared in <repositories> below
-           (requires network access to nexus.kinetica.com).
-        2. Install the fat-jar locally after downloading from
-           https://github.com/kineticadb/kinetica-api-java/releases :
-             mvn install:install-file \
-               -Dfile=kinetica-jdbc-7.1.9.9-jar-with-dependencies.jar \
-               -DgroupId=com.kinetica -DartifactId=kinetica-jdbc \
-               -Dversion=7.1.9.9 -Dpackaging=jar
+      Kinetica JDBC driver — still needed by KineticaSchemaInitializer for the
+      initial DDL check.  Version must be reachable from nexus.kinetica.com.
     -->
     <dependency>
       <groupId>com.kinetica</groupId>
       <artifactId>kinetica-jdbc</artifactId>
       <version>7.2.3.16</version>
     </dependency>
+
+    <!--
+      NOTE: gpudb-api (BulkInserter, GenericRecord, Type, GPUdb, WorkerList) is
+      already bundled inside kinetica-jdbc-*-jar-with-dependencies.jar above.
+      No separate gpudb-api dependency is needed.
+    -->
 
     <!-- Test -->
     <dependency>

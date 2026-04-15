@@ -8,13 +8,12 @@ const EMPTY_METRICS = {
   recordsTransformed: 0,
   recordsInsertedToKinetica: 0,
   routes: {
-    fetchFromOracle:  { routeId: 'fetchFromOracle',  status: 'IDLE', exchangesTotal: 0, exchangesFailed: 0, lastProcessingTimeMs: 0, meanProcessingTimeMs: 0, throughputPerSec: 0, throughputHistory: [] },
-    processBatch:     { routeId: 'processBatch',     status: 'IDLE', exchangesTotal: 0, exchangesFailed: 0, lastProcessingTimeMs: 0, meanProcessingTimeMs: 0, throughputPerSec: 0, throughputHistory: [] },
+    fetchPartition:   { routeId: 'fetchPartition',   status: 'IDLE', exchangesTotal: 0, exchangesFailed: 0, lastProcessingTimeMs: 0, meanProcessingTimeMs: 0, throughputPerSec: 0, throughputHistory: [] },
     transformRecord:  { routeId: 'transformRecord',  status: 'IDLE', exchangesTotal: 0, exchangesFailed: 0, lastProcessingTimeMs: 0, meanProcessingTimeMs: 0, throughputPerSec: 0, throughputHistory: [] },
     insertToKinetica: { routeId: 'insertToKinetica', status: 'IDLE', exchangesTotal: 0, exchangesFailed: 0, lastProcessingTimeMs: 0, meanProcessingTimeMs: 0, throughputPerSec: 0, throughputHistory: [] },
   },
   queues: {
-    batchQueue:     { queueId: 'batchQueue',     currentDepth: 0, capacity: 200,  highWaterMark: 0, percentFull: 0 },
+    fetchPartition: { queueId: 'fetchPartition', currentDepth: 0, capacity: 500,  highWaterMark: 0, percentFull: 0 },
     transformQueue: { queueId: 'transformQueue', currentDepth: 0, capacity: 5000, highWaterMark: 0, percentFull: 0 },
     insertQueue:    { queueId: 'insertQueue',    currentDepth: 0, capacity: 5000, highWaterMark: 0, percentFull: 0 },
   },

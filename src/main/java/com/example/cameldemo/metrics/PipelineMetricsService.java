@@ -29,7 +29,7 @@ public class PipelineMetricsService {
     // Queue configuration (queueId → capacity)
     // ---------------------------------------------------------------
     private static final Map<String, Integer> QUEUE_CAPACITIES = Map.of(
-            "batchQueue",     200,
+            "fetchPartition", 500,
             "transformQueue", 5000,
             "insertQueue",    5000
     );
@@ -70,12 +70,12 @@ public class PipelineMetricsService {
 
     public PipelineMetricsService(CamelContext camelContext) {
         this.camelContext = camelContext;
-        List.of("fetchFromOracle", "processBatch", "transformRecord", "insertToKinetica",
-                "manualTrigger")
+        List.of("resumeCheck", "partitionController", "fetchPartition",
+                "transformRecord", "insertToKinetica", "manualTrigger")
             .forEach(id -> routeStats.put(id, new RouteStats()));
         QUEUE_CAPACITIES.keySet()
             .forEach(q -> throughputHistories.put(q, new LinkedList<>()));
-        List.of("fetchFromOracle", "processBatch", "transformRecord", "insertToKinetica")
+        List.of("fetchPartition", "transformRecord", "insertToKinetica")
             .forEach(id -> throughputHistories.put(id, new LinkedList<>()));
     }
 
@@ -126,15 +126,15 @@ public class PipelineMetricsService {
 
         // Derive record-level counters from specific routes
         switch (routeId) {
-            case "processBatch"     -> {
-                // each processBatch exchange carries one batch; batchSize = rows in that batch
-                if (batchSize != null && batchSize > 0) recordsFetched.addAndGet(batchSize);
+            case "transformRecord"  -> {
+                // Each transformRecord exchange = 1 row fetched from Oracle and transformed
+                recordsFetched.incrementAndGet();
+                recordsTransformed.incrementAndGet();
             }
-            case "transformRecord"  -> recordsTransformed.incrementAndGet();
             case "insertToKinetica" -> {
-                if (batchSize != null && batchSize > 0) {
-                    recordsInserted.addAndGet(batchSize);
-                }
+                // Each exchange = 1 record handed to BulkInserter.
+                // BulkInserter batches internally; we count records going IN.
+                if (!failed) recordsInserted.incrementAndGet();
             }
         }
     }
@@ -234,7 +234,7 @@ public class PipelineMetricsService {
 
     public PipelineSnapshot getSnapshot() {
         Map<String, RouteMetricSnapshot> routes = new LinkedHashMap<>();
-        List.of("fetchFromOracle", "processBatch", "transformRecord", "insertToKinetica")
+        List.of("fetchPartition", "transformRecord", "insertToKinetica")
             .forEach(id -> {
                 RouteStats s = routeStats.getOrDefault(id, new RouteStats());
                 routes.put(id, new RouteMetricSnapshot(

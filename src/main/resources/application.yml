@@ -70,6 +70,18 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 3
         automatic-transition-from-open-to-half-open-enabled: true
 
+# Kinetica GPUdb native API (used by KineticaConfig / BulkInserter)
+# kinetica.url connects to the head node REST API endpoint.
+# kinetica.multiHeadIngest: set true only when Kinetica worker IPs are
+#   directly reachable (not the case in standard Docker-on-localhost setups).
+kinetica:
+  url: http://localhost:9191
+  username: admin
+  password: kntAUG30
+  table: KINETICA_BANK_TRANSACTIONS
+  batchSize: 10000
+  multiHeadIngest: false
+
 logging:
   level:
     org.apache.camel: INFO

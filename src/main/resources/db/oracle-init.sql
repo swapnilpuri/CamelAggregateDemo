@@ -9,7 +9,14 @@
 BEGIN
     EXECUTE IMMEDIATE 'DROP TABLE BANK_TRANSACTIONS CASCADE CONSTRAINTS PURGE';
 EXCEPTION
-    WHEN OTHERS THEN NULL;   -- ignore ORA-00942 (table does not exist)
+    WHEN OTHERS THEN NULL;
+END;
+/
+
+BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE ETL_PROGRESS CASCADE CONSTRAINTS PURGE';
+EXCEPTION
+    WHEN OTHERS THEN NULL;
 END;
 /
 
@@ -32,6 +39,20 @@ CREATE TABLE BANK_TRANSACTIONS (
 
 -- Note: no explicit index needed on TRANSACTION_ID — the PRIMARY KEY
 -- constraint already creates a unique index on that column.
+
+-- ============================================================
+-- ETL progress tracking table
+-- Managed by PartitionCalculator; one row per 100 000-row partition.
+-- STATUS lifecycle: PENDING → IN_PROGRESS → COMPLETED | FAILED
+-- ============================================================
+CREATE TABLE ETL_PROGRESS (
+    PARTITION_ID    NUMBER          PRIMARY KEY,
+    RANGE_START     NUMBER          NOT NULL,
+    RANGE_END       NUMBER          NOT NULL,
+    STATUS          VARCHAR2(20)    DEFAULT 'PENDING' NOT NULL,
+    ROWS_PROCESSED  NUMBER          DEFAULT 0,
+    UPDATED_AT      TIMESTAMP       DEFAULT SYSTIMESTAMP NOT NULL
+);
 
 -- ============================================================
 -- Seed data — 500 rows
