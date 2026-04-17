@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Filtered ETL Routes — Apache Camel 4.x Spring XML DSL
+  =======================================================
+  2 routes:
+
+  Route A (filteredQueryTrigger)    : direct:runFilteredQuery  (UI/controller entry point)
+                                       → validate AMOUNT header (non-numeric → null/ignored)
+                                       → COUNT query  (oracle-filtered-count.sql)
+                                       → if count ≤ 10 000 : single SELECT, list split
+                                         if count  > 10 000 : streaming SELECT
+                                                              (outputType=StreamList,
+                                                               fetchSize=etl.filtered.pageSize)
+                                                              streaming split, INFO log every page
+                                       → each row → seda:filteredInsertQueue
+
+  Route B (filteredAggregateAndLoad): seda:filteredInsertQueue (6 concurrent consumers)
+                                       → aggregate rows into batches of 20 000
+                                         (filteredBatchAggregationStrategy,
+                                          completionSize=20 000, completionTimeout=5 s)
+                                       → Resilience4j circuit breaker (same params as
+                                         original insertToKinetica route)
+                                       → kineticaInsertBean.insertBatch(List<Map>)
+                                         (loops list, calls BulkInserter.insert() per row)
+                                       → onFallback: log dropped batch size
+
+  SQL files (src/main/resources/sql/):
+    oracle-filtered-count.sql  — COUNT(*) with 5 optional WHERE predicates
+    oracle-filtered-select.sql — SELECT *  with same predicates, ORDER BY TRANSACTION_ID
+
+  Optional filter headers (all nullable; absent header = predicate bypassed):
+    AMOUNT           (Number)  — minimum amount  (AMOUNT >= :#AMOUNT)
+    CURRENCY         (String)  — exact match
+    TRANSACTION_TYPE (String)  — exact match
+    STATUS           (String)  — exact match
+    BRANCH_CODE      (String)  — exact match
+
+  No ETL_PROGRESS tracking — ad-hoc query path only.
+  SqlComponent bean is registered by SqlComponentConfig, wired to oracleDataSource.
+-->
+<routes xmlns="http://camel.apache.org/schema/xml-dsl">
+
+  <!-- ================================================================
+       Route A — filteredQueryTrigger
+       Accepts optional filter headers from a UI controller
+       (e.g. MetricsController) via direct:runFilteredQuery.
+       ================================================================ -->
+  <route id="filteredQueryTrigger">
+    <from uri="direct:runFilteredQuery"/>
+
+    <onException>
+      <exception>java.sql.SQLException</exception>
+      <exception>java.net.ConnectException</exception>
+      <redeliveryPolicy
+        maximumRedeliveries="3"
+        redeliveryDelay="2000"
+        logRetryAttempted="true"
+        retryAttemptedLogLevel="WARN"/>
+      <handled>
+        <constant>true</constant>
+      </handled>
+      <log
+        message="[filteredQueryTrigger][ERROR] ${exception.class.simpleName} after ${header.CamelRedeliveryCounter} retries: ${exception.message}"
+        loggingLevel="ERROR"/>
+    </onException>
+
+    <log
+      message="[filteredQueryTrigger] Filter request received — AMOUNT=${header.AMOUNT}, CURRENCY=${header.CURRENCY}, TYPE=${header.TRANSACTION_TYPE}, STATUS=${header.STATUS}, BRANCH=${header.BRANCH_CODE}"
+      loggingLevel="INFO"/>
+
+    <!-- Step 1: Validate / normalise AMOUNT header.
+         If present but not numeric: WARN + remove → SQL predicate treats it as NULL. -->
+    <bean ref="filteredQueryHelperBean" method="validateFilterHeaders"/>
+
+    <!-- Step 2: Count matching rows (always a single-row result → outputType=SelectOne). -->
+    <to uri="sql:classpath:sql/oracle-filtered-count.sql?dataSource=#oracleDataSource&amp;outputType=SelectOne"/>
+
+    <setHeader name="filteredRowCount">
+      <!-- Oracle returns NUMBER → BigDecimal; resultType coerces to Long -->
+      <simple resultType="java.lang.Long">${body[ROW_COUNT]}</simple>
+    </setHeader>
+
+    <log message="[filteredQueryTrigger] Matching rows: ${header.filteredRowCount}"
+         loggingLevel="INFO"/>
+
+    <!-- Step 3: Choose execution path based on result size. -->
+    <choice>
+
+      <!-- ── Small result set (≤ 10 000 rows): single query, full List in memory ── -->
+      <when>
+        <simple>${header.filteredRowCount} &lt;= 10000</simple>
+
+        <log
+          message="[filteredQueryTrigger] Single-pass mode — fetching ${header.filteredRowCount} rows"
+          loggingLevel="INFO"/>
+
+        <to uri="sql:classpath:sql/oracle-filtered-select.sql?dataSource=#oracleDataSource"/>
+
+        <!-- streaming="true" avoids re-aggregating sub-exchanges back into parent -->
+        <split streaming="true">
+          <simple>${body}</simple>
+          <log
+            message="[filteredQueryTrigger][DEBUG] row: TRANSACTION_ID=${body[TRANSACTION_ID]}"
+            loggingLevel="DEBUG"/>
+          <to uri="seda:filteredInsertQueue?concurrentConsumers=6&amp;size=10000&amp;blockWhenFull=true"/>
+        </split>
+      </when>
+
+      <!-- ── Large result set (> 10 000 rows): JDBC cursor streaming ── -->
+      <otherwise>
+        <log
+          message="[filteredQueryTrigger] Streaming mode — ${header.filteredRowCount} rows, fetchSize={{etl.filtered.pageSize:1000}}"
+          loggingLevel="INFO"/>
+
+        <!-- outputType=StreamList returns a lazy ResultSetIterator backed by a JDBC cursor.
+             fetchSize controls how many rows the driver fetches from Oracle per round-trip,
+             keeping heap usage bounded regardless of total result size. -->
+        <to uri="sql:classpath:sql/oracle-filtered-select.sql?dataSource=#oracleDataSource&amp;outputType=StreamList&amp;fetchSize={{etl.filtered.pageSize:1000}}"/>
+
+        <split streaming="true">
+          <simple>${body}</simple>
+          <log
+            message="[filteredQueryTrigger][DEBUG] row: TRANSACTION_ID=${body[TRANSACTION_ID]}"
+            loggingLevel="DEBUG"/>
+          <!-- Logs INFO every etl.filtered.pageSize rows (see FilteredQueryHelperBean) -->
+          <bean ref="filteredQueryHelperBean" method="logProgress"/>
+          <to uri="seda:filteredInsertQueue?concurrentConsumers=6&amp;size=10000&amp;blockWhenFull=true"/>
+        </split>
+      </otherwise>
+
+    </choice>
+
+    <log message="[filteredQueryTrigger] All rows dispatched to seda:filteredInsertQueue"
+         loggingLevel="INFO"/>
+
+  </route>
+
+
+  <!-- ================================================================
+       Route B — filteredAggregateAndLoad
+       Consumes individual row exchanges from seda:filteredInsertQueue.
+       6 concurrent consumers aggregate rows into batches of 20 000
+       (or 5 s idle timeout for the final partial batch), then
+       bulk-insert into Kinetica via the shared BulkInserter.
+
+       kineticaInsertBean.insertBatch(List<Map>) is reused from the
+       original Route 5 bean — see insertBatch() Javadoc for rationale.
+
+       Circuit breaker mirrors original Route 5 configuration exactly,
+       but uses a separate instance name (kineticaFilteredInsert) so its
+       state is independent from the partitioned pipeline.
+       ================================================================ -->
+  <route id="filteredAggregateAndLoad">
+    <from uri="seda:filteredInsertQueue?concurrentConsumers=6&amp;size=10000&amp;blockWhenFull=true"/>
+
+    <onException>
+      <exception>java.sql.SQLException</exception>
+      <exception>java.net.ConnectException</exception>
+      <redeliveryPolicy
+        maximumRedeliveries="3"
+        redeliveryDelay="2000"
+        logRetryAttempted="true"
+        retryAttemptedLogLevel="WARN"/>
+      <handled>
+        <constant>true</constant>
+      </handled>
+      <log
+        message="[filteredAggregateAndLoad][ERROR] ${exception.class.simpleName} after ${header.CamelRedeliveryCounter} retries: ${exception.message}"
+        loggingLevel="ERROR"/>
+    </onException>
+
+    <log
+      message="[filteredAggregateAndLoad][DEBUG] Row received: TRANSACTION_ID=${body[TRANSACTION_ID]}"
+      loggingLevel="DEBUG"/>
+
+    <!-- Aggregate rows into batches.
+         correlationExpression=constant → all rows join one logical group.
+         completionSize  : fires when 20 000 rows have accumulated.
+         completionTimeout: fires (flushes partial batch) after 5 s with no new row. -->
+    <aggregate aggregationStrategyRef="filteredBatchAggregationStrategy"
+               completionSize="20000"
+               completionTimeout="5000">
+      <correlationExpression>
+        <constant>kineticaBatch</constant>
+      </correlationExpression>
+
+      <log
+        message="[filteredAggregateAndLoad] Batch ready: ${body.size()} rows — sending to Kinetica"
+        loggingLevel="INFO"/>
+
+      <!-- Resilience4j circuit breaker — same window / threshold as original Route 5.
+           Separate CB instance (kineticaFilteredInsert) keeps state independent. -->
+      <circuitBreaker>
+        <resilience4jConfiguration
+          circuitBreakerName="kineticaFilteredInsert"
+          slidingWindowSize="10"
+          failureRateThreshold="50"
+          waitDurationInOpenState="10000"
+          permittedNumberOfCallsInHalfOpenState="3"
+          automaticTransitionFromOpenToHalfOpenEnabled="true"/>
+
+        <!-- Body is List<Map<String,Object>> (from FilteredBatchAggregationStrategy).
+             insertBatch() iterates the list and calls bulkInserter.insert() per row. -->
+        <bean ref="kineticaInsertBean" method="insertBatch"/>
+
+        <onFallback>
+          <log
+            message="[filteredAggregateAndLoad] Circuit breaker OPEN — batch of ${body.size()} rows dropped"
+            loggingLevel="WARN"/>
+        </onFallback>
+      </circuitBreaker>
+
+    </aggregate>
+
+  </route>
+
+</routes>

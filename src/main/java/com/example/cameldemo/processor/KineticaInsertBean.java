@@ -9,6 +9,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PreDestroy;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -63,6 +64,28 @@ public class KineticaInsertBean {
         record.put("PIPELINE_BATCH_ID",   null);
 
         bulkInserter.insert(record);
+    }
+
+    // ------------------------------------------------------------------
+    // Called per-batch from filteredAggregateAndLoad (Route B)
+    // ------------------------------------------------------------------
+
+    /**
+     * Inserts a pre-aggregated batch of Oracle rows produced by
+     * {@code FilteredBatchAggregationStrategy}.  Each row is converted to a
+     * {@link GenericRecord} via the existing {@link #insert(Map)} method so
+     * all type-conversion logic stays in one place.
+     *
+     * Reusing this bean (rather than creating FilteredKineticaBatchInsertBean)
+     * is possible because the only difference is the calling convention:
+     * Route 5 feeds one Map at a time; Route B feeds a List&lt;Map&gt;.  The
+     * shared {@link BulkInserter} instance is thread-safe for both callers.
+     */
+    public void insertBatch(List<Map<String, Object>> rows) throws BulkInserter.InsertException {
+        for (Map<String, Object> row : rows) {
+            insert(row);
+        }
+        log.debug("[KineticaInsertBean] Batch of {} rows queued in BulkInserter", rows.size());
     }
 
     // ------------------------------------------------------------------

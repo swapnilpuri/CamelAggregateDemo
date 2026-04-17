@@ -1,9 +1,10 @@
 import { usePipelineMetrics } from './hooks/usePipelineMetrics.js';
-import StatsBar          from './components/StatsBar.jsx';
-import PipelineFlow      from './components/PipelineFlow.jsx';
-import ThroughputChart   from './components/ThroughputChart.jsx';
-import RouteMetricsCards from './components/RouteMetricsCards.jsx';
-import SeedPanel         from './components/SeedPanel.jsx';
+import StatsBar           from './components/StatsBar.jsx';
+import PipelineFlow       from './components/PipelineFlow.jsx';
+import ThroughputChart    from './components/ThroughputChart.jsx';
+import RouteMetricsCards  from './components/RouteMetricsCards.jsx';
+import SeedPanel          from './components/SeedPanel.jsx';
+import FilteredQueryPanel from './components/FilteredQueryPanel.jsx';
 
 export default function App() {
   const { metrics, connected, error, startPipeline, resetMetrics } = usePipelineMetrics();
@@ -83,8 +84,11 @@ export default function App() {
       {/* Per-route metric cards */}
       <RouteMetricsCards routes={metrics.routes} />
 
-      {/* Oracle data seeder */}
-      <SeedPanel />
+      {/* Data tools: seed + filtered query — side by side on xl */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <SeedPanel />
+        <FilteredQueryPanel />
+      </div>
 
     </div>
   );

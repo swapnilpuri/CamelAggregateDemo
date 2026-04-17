@@ -58,6 +58,11 @@ camel:
   # directly. The properties below are kept as documentation and for RowBatchSplitter.
   batch-size: 500 # rows per batch — read by RowBatchSplitter via @Value
 
+# Filtered-query ETL settings
+etl:
+  filtered:
+    pageSize: 1000   # JDBC fetchSize for cursor streaming AND progress-log interval
+
 # Resilience4j circuit breaker — mirrors the resilience4jConfiguration in routes.xml
 # (Camel configures the CB inline; these Spring Boot properties are a fallback reference)
 resilience4j:

@@ -82,6 +82,12 @@
       <artifactId>camel-jdbc-starter</artifactId>
     </dependency>
 
+    <!-- SQL component (named-parameter queries; used by filtered-query routes) -->
+    <dependency>
+      <groupId>org.apache.camel.springboot</groupId>
+      <artifactId>camel-sql-starter</artifactId>
+    </dependency>
+
     <!-- SEDA (Staged Event-Driven Architecture) queues -->
     <dependency>
       <groupId>org.apache.camel.springboot</groupId>

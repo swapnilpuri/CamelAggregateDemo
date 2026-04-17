@@ -106,7 +106,7 @@ public class KineticaConfig {
 
         // Create target table — no-op if it already exists
         Map<String, String> tableOptions = new HashMap<>();
-        tableOptions.put("if_not_exists", "true");
+        tableOptions.put("no_error_if_exists", "true");
         try {
             gpudb.createTable(tableName, typeId, tableOptions);
             log.info("[KineticaConfig] Table {} created/verified in Kinetica", tableName);
