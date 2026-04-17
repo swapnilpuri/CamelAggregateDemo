@@ -49,9 +49,9 @@ camel:
     name: BankingETLCamel
     main-run-controller: true
 
-  # XML DSL route discovery (default pattern, kept explicit for clarity)
-  springxml:
-    routes-include-pattern: classpath:camel/*.xml
+  # XML DSL route discovery (uses Camel Main loader for xml-dsl namespace — required by Kaoto)
+  main:
+    routes-include-pattern: classpath:camel/*.camel.xml
 
   # Application-level pipeline tuning
   # NOTE: routes.xml now hardcodes concurrency (4/8/6) and aggregate sizes (10000/5000ms)

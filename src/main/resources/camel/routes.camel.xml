@@ -26,7 +26,7 @@
   Resilience4j circuit breaker on Route 5: failureRateThreshold=50%,
     waitDurationInOpenState=10s.
 -->
-<routes xmlns="http://camel.apache.org/schema/spring">
+<routes xmlns="http://camel.apache.org/schema/xml-dsl">
 
   <!-- ================================================================
        Route 1 — resumeCheck
@@ -40,20 +40,20 @@
            missing     exception and delegates to partitionController.
        ================================================================ -->
   <route id="resumeCheck" autoStartup="true">
-    <from uri="timer:startupCheckTimer?repeatCount=1&amp;delay=1000"/>
+    <from uri="timer:startupCheckTimer?repeatCount=1&amp;delay=1000" />
 
-    <log message="[resumeCheck] Checking ETL_PROGRESS for resumable partitions…" loggingLevel="INFO"/>
+    <log message="[resumeCheck] Checking ETL_PROGRESS for resumable partitions…" loggingLevel="INFO" />
 
     <doTry>
       <setBody>
         <constant>
           SELECT PARTITION_ID, RANGE_START, RANGE_END
-          FROM   ETL_PROGRESS
-          WHERE  STATUS IN ('PENDING', 'FAILED')
-          ORDER  BY PARTITION_ID
+          FROM ETL_PROGRESS
+          WHERE STATUS IN ('PENDING', 'FAILED')
+          ORDER BY PARTITION_ID
         </constant>
       </setBody>
-      <to uri="jdbc:oracleDataSource"/>
+      <to uri="jdbc:oracleDataSource" />
 
       <!-- body is now List<Map<String,Object>> from JDBC -->
       <setHeader name="resumedCount">
@@ -63,27 +63,30 @@
       <choice>
         <when>
           <simple>${header.resumedCount} > 0</simple>
-          <log message="[resumeCheck] Resuming ${header.resumedCount} partition(s) — dispatching to seda:fetchPartition"
-               loggingLevel="INFO"/>
+          <log
+            message="[resumeCheck] Resuming ${header.resumedCount} partition(s) — dispatching to seda:fetchPartition"
+            loggingLevel="INFO" />
           <split>
             <simple>${body}</simple>
             <!-- Convert Map row → RangePartition, then enqueue -->
-            <bean ref="partitionCalculator" method="toRangePartition"/>
-            <to uri="seda:fetchPartition?concurrentConsumers=6&amp;size=500&amp;blockWhenFull=true"/>
+            <bean ref="partitionCalculator" method="toRangePartition" />
+            <to uri="seda:fetchPartition?concurrentConsumers=6&amp;size=500&amp;blockWhenFull=true" />
           </split>
         </when>
         <otherwise>
-          <log message="[resumeCheck] No pending partitions — delegating to partitionController" loggingLevel="INFO"/>
-          <to uri="direct:partitionController"/>
+          <log message="[resumeCheck] No pending partitions — delegating to partitionController"
+            loggingLevel="INFO" />
+          <to uri="direct:partitionController" />
         </otherwise>
       </choice>
 
       <doCatch>
         <!-- ETL_PROGRESS doesn't exist yet on first-ever startup (ORA-00942) -->
         <exception>java.sql.SQLException</exception>
-        <log message="[resumeCheck] ETL_PROGRESS not accessible (${exception.message}) — starting fresh"
-             loggingLevel="INFO"/>
-        <to uri="direct:partitionController"/>
+        <log
+          message="[resumeCheck] ETL_PROGRESS not accessible (${exception.message}) — starting fresh"
+          loggingLevel="INFO" />
+        <to uri="direct:partitionController" />
       </doCatch>
     </doTry>
   </route>
@@ -100,12 +103,13 @@
        Each partition is then split and dispatched to seda:fetchPartition.
        ================================================================ -->
   <route id="partitionController">
-    <from uri="direct:partitionController"/>
+    <from uri="direct:partitionController" />
 
-    <log message="[partitionController] Calculating partitions over BANK_TRANSACTIONS…" loggingLevel="INFO"/>
+    <log message="[partitionController] Calculating partitions over BANK_TRANSACTIONS…"
+      loggingLevel="INFO" />
 
     <!-- Bean returns List<RangePartition>; also writes ETL_PROGRESS rows -->
-    <bean ref="partitionCalculator" method="calculatePartitions"/>
+    <bean ref="partitionCalculator" method="calculatePartitions" />
 
     <setHeader name="partitionCount">
       <simple resultType="java.lang.Integer">${body.size()}</simple>
@@ -114,16 +118,18 @@
     <choice>
       <when>
         <simple>${header.partitionCount} > 0</simple>
-        <log message="[partitionController] Dispatching ${header.partitionCount} partition(s) to seda:fetchPartition"
-             loggingLevel="INFO"/>
+        <log
+          message="[partitionController] Dispatching ${header.partitionCount} partition(s) to seda:fetchPartition"
+          loggingLevel="INFO" />
         <split>
           <simple>${body}</simple>
-          <to uri="seda:fetchPartition?concurrentConsumers=6&amp;size=500&amp;blockWhenFull=true"/>
+          <to uri="seda:fetchPartition?concurrentConsumers=6&amp;size=500&amp;blockWhenFull=true" />
         </split>
-        <log message="[partitionController] All partitions dispatched" loggingLevel="INFO"/>
+        <log message="[partitionController] All partitions dispatched" loggingLevel="INFO" />
       </when>
       <otherwise>
-        <log message="[partitionController] No partitions to process (BANK_TRANSACTIONS is empty?)" loggingLevel="WARN"/>
+        <log message="[partitionController] No partitions to process (BANK_TRANSACTIONS is empty?)"
+          loggingLevel="WARN" />
       </otherwise>
     </choice>
   </route>
@@ -145,7 +151,7 @@
          captured before the try block so they're always available).
        ================================================================ -->
   <route id="fetchPartition">
-    <from uri="seda:fetchPartition?concurrentConsumers=6&amp;size=500"/>
+    <from uri="seda:fetchPartition?concurrentConsumers=6&amp;size=500" />
 
     <!-- Capture partition metadata before body is replaced -->
     <setHeader name="partitionId">
@@ -162,41 +168,46 @@
 
       <!-- Step 1: mark IN_PROGRESS -->
       <setBody>
-        <simple>UPDATE ETL_PROGRESS SET STATUS = 'IN_PROGRESS', UPDATED_AT = SYSDATE WHERE PARTITION_ID = ${header.partitionId}</simple>
+        <simple>UPDATE ETL_PROGRESS SET STATUS = 'IN_PROGRESS', UPDATED_AT = SYSDATE WHERE
+          PARTITION_ID = ${header.partitionId}</simple>
       </setBody>
-      <to uri="jdbc:oracleDataSource"/>
+      <to uri="jdbc:oracleDataSource" />
 
-      <log message="[fetchPartition] Fetching partition ${header.partitionId}: IDs ${header.startId}–${header.endId}"
-           loggingLevel="INFO"/>
+      <log
+        message="[fetchPartition] Fetching partition ${header.partitionId}: IDs ${header.startId}–${header.endId}"
+        loggingLevel="INFO" />
 
       <!-- Step 2: range SELECT (StreamList = lazy iterator, bounded heap) -->
       <setBody>
-        <simple>SELECT * FROM BANK_TRANSACTIONS WHERE TRANSACTION_ID BETWEEN ${header.startId} AND ${header.endId} ORDER BY TRANSACTION_ID</simple>
+        <simple>SELECT * FROM BANK_TRANSACTIONS WHERE TRANSACTION_ID BETWEEN ${header.startId} AND
+          ${header.endId} ORDER BY TRANSACTION_ID</simple>
       </setBody>
-      <to uri="jdbc:oracleDataSource?outputType=StreamList"/>
+      <to uri="jdbc:oracleDataSource?outputType=StreamList" />
 
       <!-- Step 3: fan out individual rows to transformQueue -->
       <split streaming="true">
         <simple>${body}</simple>
-        <to uri="seda:transformQueue?concurrentConsumers=8&amp;size=5000&amp;blockWhenFull=true"/>
+        <to uri="seda:transformQueue?concurrentConsumers=8&amp;size=5000&amp;blockWhenFull=true" />
       </split>
 
       <!-- Step 4: mark COMPLETED (runs after all rows are enqueued) -->
       <setBody>
-        <simple>UPDATE ETL_PROGRESS SET STATUS = 'COMPLETED', UPDATED_AT = SYSDATE WHERE PARTITION_ID = ${header.partitionId}</simple>
+        <simple>UPDATE ETL_PROGRESS SET STATUS = 'COMPLETED', UPDATED_AT = SYSDATE WHERE
+          PARTITION_ID = ${header.partitionId}</simple>
       </setBody>
-      <to uri="jdbc:oracleDataSource"/>
+      <to uri="jdbc:oracleDataSource" />
 
-      <log message="[fetchPartition] Partition ${header.partitionId} COMPLETED" loggingLevel="INFO"/>
+      <log message="[fetchPartition] Partition ${header.partitionId} COMPLETED" loggingLevel="INFO" />
 
       <doCatch>
         <exception>java.lang.Exception</exception>
         <log message="[fetchPartition] Partition ${header.partitionId} FAILED: ${exception.message}"
-             loggingLevel="ERROR"/>
+          loggingLevel="ERROR" />
         <setBody>
-          <simple>UPDATE ETL_PROGRESS SET STATUS = 'FAILED', UPDATED_AT = SYSDATE WHERE PARTITION_ID = ${header.partitionId}</simple>
+          <simple>UPDATE ETL_PROGRESS SET STATUS = 'FAILED', UPDATED_AT = SYSDATE WHERE PARTITION_ID
+            = ${header.partitionId}</simple>
         </setBody>
-        <to uri="jdbc:oracleDataSource"/>
+        <to uri="jdbc:oracleDataSource" />
       </doCatch>
 
     </doTry>
@@ -209,26 +220,30 @@
        8 concurrent consumers provide parallelism for CPU-bound work.
        ================================================================ -->
   <route id="transformRecord">
-    <from uri="seda:transformQueue?concurrentConsumers=8&amp;size=5000"/>
+    <from uri="seda:transformQueue?concurrentConsumers=8&amp;size=5000" />
 
     <onException>
       <exception>java.sql.SQLException</exception>
       <exception>java.net.ConnectException</exception>
       <redeliveryPolicy
-          maximumRedeliveries="3"
-          redeliveryDelay="2000"
-          logRetryAttempted="true"
-          retryAttemptedLogLevel="WARN"/>
-      <handled><constant>true</constant></handled>
-      <log message="[transformRecord][ERROR] ${exception.class.simpleName} after ${header.CamelRedeliveryCounter} retries: ${exception.message}"
-           loggingLevel="ERROR"/>
+        maximumRedeliveries="3"
+        redeliveryDelay="2000"
+        logRetryAttempted="true"
+        retryAttemptedLogLevel="WARN" />
+      <handled>
+        <constant>true</constant>
+      </handled>
+      <log
+        message="[transformRecord][ERROR] ${exception.class.simpleName} after ${header.CamelRedeliveryCounter} retries: ${exception.message}"
+        loggingLevel="ERROR" />
     </onException>
 
     <!-- TODO: replace this log with real transformation logic -->
-    <log message="[transformRecord] Processing record: TRANSACTION_ID=${body[TRANSACTION_ID]}, AMOUNT=${body[AMOUNT]}, CURRENCY=${body[CURRENCY]}"
-         loggingLevel="DEBUG"/>
+    <log
+      message="[transformRecord] Processing record: TRANSACTION_ID=${body[TRANSACTION_ID]}, AMOUNT=${body[AMOUNT]}, CURRENCY=${body[CURRENCY]}"
+      loggingLevel="DEBUG" />
 
-    <to uri="seda:insertQueue?concurrentConsumers=6&amp;size=5000&amp;blockWhenFull=true"/>
+    <to uri="seda:insertQueue?concurrentConsumers=6&amp;size=5000&amp;blockWhenFull=true" />
   </route>
 
 
@@ -250,37 +265,40 @@
          • HALF_OPEN: 3 probe calls after 10 s quiet period
        ================================================================ -->
   <route id="insertToKinetica">
-    <from uri="seda:insertQueue?concurrentConsumers=8&amp;size=5000"/>
+    <from uri="seda:insertQueue?concurrentConsumers=8&amp;size=5000" />
 
     <onException>
       <exception>java.lang.Exception</exception>
       <redeliveryPolicy
-          maximumRedeliveries="3"
-          redeliveryDelay="2000"
-          logRetryAttempted="true"
-          retryAttemptedLogLevel="WARN"/>
-      <handled><constant>false</constant></handled>
+        maximumRedeliveries="3"
+        redeliveryDelay="2000"
+        logRetryAttempted="true"
+        retryAttemptedLogLevel="WARN" />
+      <handled>
+        <constant>false</constant>
+      </handled>
       <log message="[insertToKinetica][ERROR] ${exception.class.simpleName}: ${exception.message}"
-           loggingLevel="ERROR"/>
+        loggingLevel="ERROR" />
     </onException>
 
     <circuitBreaker>
       <resilience4jConfiguration
-          circuitBreakerName="kineticaInsert"
-          slidingWindowSize="10"
-          failureRateThreshold="50"
-          waitDurationInOpenState="10000"
-          permittedNumberOfCallsInHalfOpenState="3"
-          automaticTransitionFromOpenToHalfOpenEnabled="true"/>
+        circuitBreakerName="kineticaInsert"
+        slidingWindowSize="10"
+        failureRateThreshold="50"
+        waitDurationInOpenState="10000"
+        permittedNumberOfCallsInHalfOpenState="3"
+        automaticTransitionFromOpenToHalfOpenEnabled="true" />
 
       <!-- Body is Map<String,Object> (one row from Oracle).
            KineticaInsertBean converts it to GenericRecord and queues it
            in the shared BulkInserter — no JDBC, no manual batching. -->
-      <bean ref="kineticaInsertBean" method="insert"/>
+      <bean ref="kineticaInsertBean" method="insert" />
 
       <onFallback>
-        <log message="[insertToKinetica] Circuit breaker OPEN — record ${body[TRANSACTION_ID]} dropped"
-             loggingLevel="WARN"/>
+        <log
+          message="[insertToKinetica] Circuit breaker OPEN — record ${body[TRANSACTION_ID]} dropped"
+          loggingLevel="WARN" />
       </onFallback>
     </circuitBreaker>
 
@@ -294,36 +312,39 @@
        then delegates to direct:partitionController.
        ================================================================ -->
   <route id="manualTrigger">
-    <from uri="direct:triggerPipeline"/>
+    <from uri="direct:triggerPipeline" />
 
     <onException>
       <exception>java.sql.SQLException</exception>
       <exception>java.net.ConnectException</exception>
       <redeliveryPolicy maximumRedeliveries="3" redeliveryDelay="2000"
-                        logRetryAttempted="true" retryAttemptedLogLevel="WARN"/>
-      <handled><constant>true</constant></handled>
+        logRetryAttempted="true" retryAttemptedLogLevel="WARN" />
+      <handled>
+        <constant>true</constant>
+      </handled>
       <log message="[manualTrigger][ERROR] ${exception.class.simpleName}: ${exception.message}"
-           loggingLevel="ERROR"/>
+        loggingLevel="ERROR" />
     </onException>
 
-    <log message="[manualTrigger] Pipeline triggered via UI" loggingLevel="INFO"/>
+    <log message="[manualTrigger] Pipeline triggered via UI" loggingLevel="INFO" />
 
     <!-- Reset ETL_PROGRESS so partitionController creates fresh partitions -->
     <doTry>
       <setBody>
         <constant>DELETE FROM ETL_PROGRESS</constant>
       </setBody>
-      <to uri="jdbc:oracleDataSource"/>
+      <to uri="jdbc:oracleDataSource" />
       <doCatch>
         <exception>java.sql.SQLException</exception>
-        <log message="[manualTrigger] Could not clear ETL_PROGRESS (${exception.message}) — proceeding anyway"
-             loggingLevel="WARN"/>
+        <log
+          message="[manualTrigger] Could not clear ETL_PROGRESS (${exception.message}) — proceeding anyway"
+          loggingLevel="WARN" />
       </doCatch>
     </doTry>
 
-    <to uri="direct:partitionController"/>
+    <to uri="direct:partitionController" />
 
-    <log message="[manualTrigger] Partitions dispatched" loggingLevel="INFO"/>
+    <log message="[manualTrigger] Partitions dispatched" loggingLevel="INFO" />
   </route>
 
 </routes>
